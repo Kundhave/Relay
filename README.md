@@ -42,16 +42,16 @@ Relay solves this by introducing a **buffered, asynchronous, and fault-tolerant 
 
 ## 🏗️ System Architecture
 
-Payment Service
-↓
-FastAPI (Relay Ingress API)
-↓
-PostgreSQL (Source of Truth)
-↓
-Redis (Message Broker)
-↓
-Celery Workers
-↓
+Payment Service  
+↓  
+FastAPI (Relay Ingress API)  
+↓  
+PostgreSQL (Source of Truth)  
+↓  
+Redis (Message Broker)  
+↓  
+Celery Workers  
+↓  
 Merchant Webhook Endpoints
 
 
