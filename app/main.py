@@ -1,7 +1,10 @@
 import time
-from fastapi import FastAPI
-from .database import engine, Base
+from fastapi import FastAPI, Depends, status
+from sqlalchemy.orm import Session
+from .database import engine, Base, get_db
 from . import models  # noqa: F401 — must import to register models with Base.metadata
+from .models import WebhookEvent, EventStatus
+from .schemas import EventRequest, EventResponse
 
 app = FastAPI()
 
@@ -24,3 +27,22 @@ def startup_event():
 @app.get("/")
 async def health_check():
     return {"status": "ok", "service": "relay"}
+
+@app.post("/events", response_model=EventResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_event(event: EventRequest, db: Session = Depends(get_db)):
+    db_event = WebhookEvent(
+        merchant_id=event.merchant_id,
+        event_type=event.event_type,
+        payload=event.payload,
+        target_url=event.target_url,
+        status=EventStatus.PENDING,
+        attempts=0,
+    )
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    return EventResponse(
+        id=str(db_event.id),
+        status="PENDING",
+        message="Event received and queued for delivery",
+    )
