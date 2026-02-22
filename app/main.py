@@ -1,5 +1,6 @@
 import time
-from fastapi import FastAPI, Depends, status
+import uuid
+from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from .database import engine, Base, get_db
 from . import models  # noqa: F401 — must import to register models with Base.metadata
@@ -49,3 +50,20 @@ async def ingest_event(event: EventRequest, db: Session = Depends(get_db)):
         message="Event received and queued for delivery",
     )
 
+@app.get("/events/{event_id}")
+async def get_event_status(event_id: str, db: Session = Depends(get_db)):
+    event = db.query(WebhookEvent).filter(
+        WebhookEvent.id == uuid.UUID(event_id)
+    ).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {
+        "id": str(event.id),
+        "merchant_id": event.merchant_id,
+        "event_type": event.event_type,
+        "status": event.status.value,
+        "attempts": event.attempts,
+        "target_url": event.target_url,
+        "created_at": event.created_at.isoformat(),
+        "updated_at": event.updated_at.isoformat(),
+    }

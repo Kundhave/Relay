@@ -1,12 +1,13 @@
 import uuid
 import httpx
+from celery.exceptions import MaxRetriesExceededError
 from .celery_app import celery_app
 from .database import SessionLocal
 from .models import WebhookEvent, EventStatus
 
 
-@celery_app.task(name="deliver_webhook")
-def deliver_webhook(event_id: str):
+@celery_app.task(name="deliver_webhook", bind=True, max_retries=5)
+def deliver_webhook(self, event_id: str):
     db = SessionLocal()
     try:
         event = db.query(WebhookEvent).filter(
@@ -27,17 +28,43 @@ def deliver_webhook(event_id: str):
 
             if 200 <= response.status_code < 300:
                 event.status = EventStatus.SUCCESS
+                event.attempts += 1
+                db.commit()
+                return
+
             elif 400 <= response.status_code < 500:
                 event.status = EventStatus.FAILED
+                event.attempts += 1
+                db.commit()
+                return
+
             else:
-                event.status = EventStatus.FAILED
+                # 5xx — retry with exponential backoff
+                event.attempts += 1
+                db.commit()
+                try:
+                    self.retry(
+                        countdown=2 ** self.request.retries,
+                        exc=Exception(f"Server error: {response.status_code}"),
+                    )
+                except MaxRetriesExceededError:
+                    event.status = EventStatus.DEAD_LETTER
+                    db.commit()
+                    return
 
         except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
             print(f"Delivery failed for event {event_id}: {e}")
-            event.status = EventStatus.FAILED
-
-        event.attempts += 1
-        db.commit()
+            event.attempts += 1
+            db.commit()
+            try:
+                self.retry(
+                    countdown=2 ** self.request.retries,
+                    exc=e,
+                )
+            except MaxRetriesExceededError:
+                event.status = EventStatus.DEAD_LETTER
+                db.commit()
+                return
 
     finally:
         db.close()
