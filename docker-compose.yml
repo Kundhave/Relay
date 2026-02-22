@@ -8,8 +8,10 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - .:/app
 
@@ -21,6 +23,11 @@ services:
       POSTGRES_DB: relay_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U relay_user -d relay_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "5432:5432"
 
@@ -35,8 +42,10 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - .:/app
 
